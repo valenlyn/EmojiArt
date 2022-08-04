@@ -19,20 +19,94 @@ struct EmojiArtDocumentView: View {
         }
     }
     
+    @State private var selectedEmojis = Set<EmojiArtModel.Emoji>()
+    @State private var offset = CGSize.zero
+    
     var documentBody: some View {
+        
         GeometryReader { geometry in
             ZStack {
                 Color.yellow
                 ForEach(document.emojis) { emoji in
-                    Text(emoji.text)
-                        .font(.system(size: fontSize(for: emoji)))
-                        .position(position(for: emoji, in: geometry))
+                    VStack {
+                        Text(emoji.text)
+                            .font(.system(size: fontSize(for: emoji)))
+                            .border((selectedEmojis.contains(emoji) ? .blue : .clear))
+                            .gesture(drag(the: emoji))
+                            .position(position(for: emoji, in: geometry))
+                            .onTapGesture {
+                                    if (selectedEmojis.contains(emoji)) {
+                                        selectedEmojis.remove(emoji)
+                                    } else {
+                                        selectedEmojis.insert(emoji)
+                                    }
+                                }
+                            .overlay(Group {
+                                ZStack {
+                                    Button(action: { delete(the: emoji) }) {
+                                        Image(systemName: "trash")
+                                            .foregroundColor(.red).font(.title)
+                                    }
+                                        .opacity((selectedEmojis.contains(emoji) ? 1 : 0))
+                                        .position(position(for: emoji, in: geometry))
+                                        .padding(EdgeInsets(top: -fontSize(for: emoji) / 2, leading: fontSize(for: emoji) / 3, bottom: 0, trailing: 0))
+                                }
+                            })
+                    }
                 }
             }
+            .gesture(pinch())
             .onDrop(of: [.plainText], isTargeted: nil) { providers, location in
                 return drop(providers: providers, at: location, in: geometry)
             }
+            .onTapGesture {
+                selectedEmojis.removeAll()
+            }
         }
+    }
+    
+    private func delete(the emoji: EmojiArtModel.Emoji) {
+        document.removeEmoji(emoji)
+    }
+    
+    private func pinch() -> some Gesture {
+       MagnificationGesture()
+            .onChanged { value in
+                selectedEmojis.forEach { emoji in
+                    if let index = document.emojis.index(matching: emoji) {
+                        document.scaleEmoji(document.emojis[index], by: value)
+                    }
+                }
+            }
+            .onEnded { value in
+                selectedEmojis.removeAll()
+            }
+            
+    }
+    
+    @GestureState var draggingEmoji: (offset: CGSize, emoji: EmojiArtModel.Emoji?) = (.zero, nil)
+    
+    private func drag(the emoji: EmojiArtModel.Emoji) -> some Gesture {
+        DragGesture()
+            .updating($draggingEmoji) { currentState, gestureState, transaction in
+                let translation = currentState.translation
+                gestureState = (translation, emoji)
+            }
+            .onChanged { state in
+                selectedEmojis.forEach { emoji in
+                    if let index = document.emojis.index(matching: emoji) {
+                        document.moveEmoji(document.emojis[index], by: state.translation)
+                    }
+                }
+            }
+            .onEnded { state in
+                selectedEmojis.forEach { emoji in
+                    if let index = document.emojis.index(matching: emoji) {
+                        document.moveEmoji(document.emojis[index], by: state.translation)
+                    }
+                }
+                selectedEmojis.removeAll()
+            }
     }
     
     private func drop(providers: [NSItemProvider], at location: CGPoint, in geometry: GeometryProxy) -> Bool {
